@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snake & Ladder – Integer Ops</title>
+  <style>
+    :root{
+      --bg1:#0e1630; --bg2:#141e42; --card:#1b2658; --accent:#ffd166; --good:#2ecc71; --bad:#e74c3c;
+    }
+    html,body{height:100%}
+    body{
+      margin:0; display:flex; align-items:center; justify-content:center; flex-direction:column;
+      background: radial-gradient(60% 80% at 50% 10%, var(--bg2), var(--bg1)); color:#fff;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+    h1{ margin:10px 0 4px; font-size:28px; color:var(--accent); text-shadow:0 2px 12px rgba(0,0,0,.5)}
+    .subtitle{opacity:.9; font-size:13px; margin-bottom:14px}
+
+    .wrap{ display:flex; gap:22px; flex-wrap:wrap; align-items:flex-start; justify-content:center; }
+
+    /* BOARD */
+    .board{
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,.25));
+      border: 2px solid rgba(255,255,255,.15);
+      border-radius: 18px; padding:14px; box-shadow:0 10px 30px rgba(0,0,0,.45);
+    }
+    .grid{ display:grid; grid-template-columns: repeat(5, 68px); grid-auto-rows: 68px; gap:6px; }
+    .cell{
+      position:relative; border-radius:14px; background:#0f1440; overflow:hidden;
+      outline:1px solid rgba(255,255,255,.08); box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+    }
+    .cell .num{ position:absolute; top:6px; left:8px; font-size:12px; opacity:.85; }
+
+    /* Snake/Ladder markers */
+    .cell.snake::after{ content:"🐍"; position:absolute; right:6px; bottom:6px; font-size:18px; }
+    .cell.ladder::after{ content:"🪜"; position:absolute; right:6px; bottom:6px; font-size:18px; }
+
+    /* Pawn */
+    .pawn{ position:absolute; width:28px; height:28px; border-radius:50%; background:linear-gradient(145deg,#ff6b6b,#ff3b3b);
+           box-shadow:0 6px 18px rgba(255,59,59,.45); bottom:6px; left:50%; transform:translateX(-50%);
+           border:2px solid rgba(255,255,255,.8); animation: pop .35s ease; }
+    @keyframes pop{ from{ transform:translateX(-50%) scale(.4); opacity:.2 } to{ transform:translateX(-50%) scale(1); opacity:1 } }
+
+    /* PANEL */
+    .panel{
+      background: var(--card); border-radius:18px; padding:16px 18px; width: 330px;
+      box-shadow:0 10px 30px rgba(0,0,0,.45);
+    }
+    .question{ font-size:22px; font-weight:800; text-align:center; background:rgba(255,255,255,.06);
+               padding:14px 12px; border-radius:14px; margin-bottom:12px; letter-spacing:.2px }
+
+    .options{ display:grid; grid-template-columns: repeat(2, 1fr); gap:10px; }
+    .btn{ padding:12px 14px; border:none; border-radius:12px; font-size:18px; font-weight:800; cursor:pointer;
+          color:#0d1a2b; background: linear-gradient(180deg,#f6d58a,#e9b64d); box-shadow:0 6px 16px rgba(0,0,0,.35);
+          transition: transform .12s ease, box-shadow .12s ease, filter .12s ease; }
+    .btn:hover{ transform: translateY(-2px); box-shadow:0 10px 22px rgba(0,0,0,.5) }
+    .btn.correct{ background: linear-gradient(180deg,#8df0b8,#33d17a); color:#082016 }
+    .btn.wrong{ background: linear-gradient(180deg,#ff9a9a,#ff5e5e); color:#2b0d0d }
+    .btn:disabled{ filter: grayscale(.3); cursor:not-allowed }
+
+    .meta{ display:flex; justify-content:space-between; align-items:center; margin-top:12px; font-size:14px; opacity:.95 }
+    .feedback{ min-height:28px; margin-top:10px; font-weight:900; text-align:center }
+    .good{ color: var(--good) } .bad{ color: var(--bad) }
+
+    .controls{ display:flex; gap:10px; margin-top:12px; justify-content:center }
+    .pill{ padding:8px 12px; border-radius:999px; background:rgba(255,255,255,.08); font-size:12px }
+    .reset{ background:#0e1538; border:1px solid rgba(255,255,255,.2); color:#fff; border-radius:12px; padding:8px 12px; cursor:pointer }
+  </style>
+</head>
+<body>
+  <h1>🐍 Snake & Ladder – Integer Operations 🪜</h1>
+  <div class="subtitle">Answer correctly to move forward. Land on 🪜 to climb; beware 🐍 that send you back!</div>
+
+  <div class="wrap">
+    <section class="board">
+      <div id="grid" class="grid"></div>
+    </section>
+
+    <section class="panel">
+      <div id="question" class="question">Loading…</div>
+      <div id="options" class="options"></div>
+      <div id="feedback" class="feedback"></div>
+      <div class="meta">
+        <div id="progress" class="pill">Cell 1 / 25</div>
+        <div id="score" class="pill">Score: 0 / 0</div>
+      </div>
+      <div class="controls">
+        <button id="resetBtn" class="reset">🔄 Reset</button>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // ====== Board config ======
+    const BOARD_SIZE = 25;         // 5x5 board
+    const grid = document.getElementById('grid');
+    const feedback = document.getElementById('feedback');
+    const progressEl = document.getElementById('progress');
+    const scoreEl = document.getElementById('score');
+
+    // Snakes (go down) and ladders (go up) – keys are start tiles, values are destination tiles
+    const SNAKES  = { 22: 12, 18: 5, 24: 14 };  // ensure start > end
+    const LADDERS = { 2: 10, 7: 16, 11: 21 };  // ensure start < end
+
+    // ====== Game state ======
+    let pos = 1;     // start at tile 1 (visible on board)
+    let qCount = 0;  // total attempted
+    let score = 0;   // correct answers
+
+    // ====== Build board (serpentine visual order) ======
+    function buildBoard(){
+      grid.innerHTML = '';
+      // Create 5 rows of 5 in serpentine numbering (for visual fun) but labels remain 1..25
+      let cells = [];
+      for(let i=1;i<=BOARD_SIZE;i++){
+        const div = document.createElement('div');
+        div.className = 'cell';
+        div.dataset.pos = i;
+        const num = document.createElement('div');
+        num.className = 'num';
+        num.textContent = i;
+        div.appendChild(num);
+        if (SNAKES[i]) div.classList.add('snake');
+        if (LADDERS[i]) div.classList.add('ladder');
+        cells.push(div);
+      }
+      // Arrange in 5 rows serpentine
+      const side = 5;
+      for(let r=0;r<side;r++){
+        const rowStart = r*side; // 0,5,10,15,20
+        const row = cells.slice(rowStart, rowStart+side);
+        const ordered = (r % 2 === 0) ? row : row.reverse();
+        ordered.forEach(c => grid.appendChild(c));
+      }
+      placePawn();
+      updateMeta();
+    }
+
+    function placePawn(){
+      // Remove existing pawns
+      grid.querySelectorAll('.pawn').forEach(p => p.remove());
+      // Find the cell with matching data-pos
+      const cell = Array.from(grid.children).find(c => Number(c.dataset.pos) === pos);
+      if (cell){
+        const pawn = document.createElement('div');
+        pawn.className = 'pawn';
+        cell.appendChild(pawn);
+      }
+    }
+
+    function updateMeta(){
+      progressEl.textContent = `Cell ${pos} / ${BOARD_SIZE}`;
+      scoreEl.textContent = `Score: ${score} / ${qCount}`;
+    }
+
+    // ====== Question generation (integer-safe) ======
+    const ops = ['+','-','×','÷'];
+    function rnd(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+    function nonZero(min,max){ let n=0; while(n===0) n=rnd(min,max); return n; }
+
+    function makeQuestion(){
+      const op = ops[rnd(0,ops.length-1)];
+      let a,b,ans,display;
+      if (op === '+'){
+        a=rnd(-12,12); b=rnd(-12,12); ans=a+b; display=`${a} + ${b}`;
+      } else if (op === '-'){
+        a=rnd(-12,12); b=rnd(-12,12); ans=a-b; display=`${a} − ${b}`;
+      } else if (op === '×'){
+        a=rnd(-12,12); b=rnd(-12,12); ans=a*b; display=`${a} × ${b}`;
+      } else { // integer-safe division: ensure exact integer result
+        const divisor = nonZero(-12,12);
+        const quotient = rnd(-12,12); // allow zero too
+        a = divisor * quotient; // dividend
+        b = divisor;            // divisor
+        ans = quotient;         // exact integer answer
+        display = `${a} ÷ ${b}`;
+      }
+      return {op:op, a,b, ans, text: `${display} = ?`};
+    }
+
+    function makeOptions(correct){
+      const set = new Set([correct]);
+      while(set.size < 4){
+        let offset = rnd(-6,6);
+        if (offset === 0) continue;
+        set.add(correct + offset);
+      }
+      return Array.from(set).sort(()=>Math.random()-0.5);
+    }
+
+    const qEl = document.getElementById('question');
+    const optionsEl = document.getElementById('options');
+
+    let currentQ = null; let locked = false;
+
+    function ask(){
+      locked = false;
+      currentQ = makeQuestion();
+      qEl.textContent = currentQ.text;
+      optionsEl.innerHTML = '';
+      const opts = makeOptions(currentQ.ans);
+      opts.forEach(v =>{
+        const btn = document.createElement('button');
+        btn.className = 'btn';
+        btn.textContent = v;
+        btn.addEventListener('click', ()=> pick(v, btn));
+        optionsEl.appendChild(btn);
+      });
+      feedback.textContent = '';
+    }
+
+    const cheers = [
+      '🌟 Brilliant! You power forward!',
+      '🚀 Awesome move! Keep climbing!',
+      '🏆 Champion brain! Onward!',
+      '🔥 Hot streak! Math MVP!',
+      '✨ Nailed it!'
+    ];
+
+    function pick(choice, btn){
+      if (locked) return; // prevent double clicks
+      locked = true;
+      qCount++;
+      const buttons = optionsEl.querySelectorAll('button');
+      buttons.forEach(b=> b.disabled = true);
+
+      if (choice === currentQ.ans){
+        score++;
+        btn.classList.add('correct');
+        // move one tile forward
+        pos = Math.min(BOARD_SIZE, pos + 1);
+        let msg = cheers[rnd(0,cheers.length-1)];
+        // check for snake/ladder at new spot
+        if (LADDERS[pos]){ pos = LADDERS[pos]; msg = '🪜 Woohoo! You climbed a ladder!'; }
+        else if (SNAKES[pos]){ pos = SNAKES[pos]; msg = '🐍 Oops! Snake slide! Still proud of you—keep going!'; }
+        feedback.innerHTML = `<span class="good">${msg}</span>`;
+      } else {
+        btn.classList.add('wrong');
+        feedback.innerHTML = `<span class="bad">❌ Not this one. You got this—try the next!</span>`;
+      }
+
+      updateMeta();
+      placePawn();
+
+      if (pos >= BOARD_SIZE){
+        qEl.textContent = '🏁 Finish!';
+        feedback.innerHTML = `<span class="good">🏆 Amazing! You completed the board!</span>`;
+        optionsEl.innerHTML = '';
+        return;
+      }
+
+      setTimeout(ask, 900);
+    }
+
+    // Reset
+    document.getElementById('resetBtn').addEventListener('click', ()=>{
+      pos = 1; qCount = 0; score = 0; buildBoard(); ask();
+    });
+
+    // Init
+    buildBoard();
+    ask();
+  </script>
+</body>
+</html>
